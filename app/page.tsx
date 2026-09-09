@@ -3,38 +3,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
-  Dices,
+  Delete as DeleteIcon,
   Lightbulb,
-  RefreshCw,
+  Play,
   RotateCcw,
-  Settings,
   Timer,
   Trash2,
-  Undo2,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-
 type SymbolKey = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '+' | '-' | '×' | '÷';
+type KeypadKey = SymbolKey | '(' | ')';
 type Inventory = Record<SymbolKey, number>;
 type Feedback = { kind: 'idle' | 'success' | 'error' | 'info'; message: string };
 type Difficulty = 'lower' | 'upper';
+type HistoryEntry = { id: number; equation: string; correct: boolean };
 type ToolRegistration = {
   name: string;
   title: string;
@@ -49,6 +39,8 @@ type ModelContext = {
 
 const DIGITS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] as const;
 const OPERATORS = ['+', '-', '×', '÷'] as const;
+const KEYPAD_NUMBERS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'] as const;
+const TIMER_SECONDS = 3 * 60;
 const LOWER_TARGETS = [7, 8, 9, 12, 14, 16, 18, 21, 23, 24, 27, 31, 34, 37, 42, 45, 48, 52, 56, 63, 68, 71, 76, 81, 84, 92, 96, 98];
 const chipColors = ['rose', 'amber', 'green', 'blue', 'violet', 'pink', 'orange', 'teal', 'indigo', 'purple'];
 
@@ -86,35 +78,65 @@ function requiredChips(expression: string) {
 function evaluateExpression(raw: string): { ok: true; value: number } | { ok: false; reason: string } {
   const expression = normalizeExpression(raw);
   if (!expression) return { ok: false, reason: 'Build an equation first.' };
-  if (!/^\d+(?:[+\-×÷]\d+)+$/.test(expression)) {
-    return { ok: false, reason: 'Use numbers with +, −, ×, or ÷ between them.' };
+  if (!/^[0-9+\-×÷()]+$/.test(expression)) {
+    return { ok: false, reason: 'Use numbers, parentheses, and the four operators only.' };
   }
 
-  const numberTokens = expression.split(/[+\-×÷]/).map(Number);
-  const operatorTokens = expression.match(/[+\-×÷]/g) ?? [];
-  const numbers = [...numberTokens];
-  const operators = [...operatorTokens];
+  let index = 0;
+  let parseError = '';
 
-  for (let index = 0; index < operators.length;) {
-    const operator = operators[index];
-    if (operator === '×' || operator === '÷') {
-      if (operator === '÷' && numbers[index + 1] === 0) {
-        return { ok: false, reason: 'Division by zero is not allowed.' };
-      }
-      const value = operator === '×'
-        ? numbers[index] * numbers[index + 1]
-        : numbers[index] / numbers[index + 1];
-      numbers.splice(index, 2, value);
-      operators.splice(index, 1);
-    } else {
+  function parseFactor(): number {
+    if (expression[index] === '(') {
       index += 1;
+      const value = parseSum();
+      if (expression[index] !== ')') {
+        parseError = 'Check that every opening parenthesis has a closing parenthesis.';
+        return Number.NaN;
+      }
+      index += 1;
+      return value;
     }
+
+    const start = index;
+    while (/\d/.test(expression[index] ?? '')) index += 1;
+    if (start === index) {
+      parseError = 'Place a number or opening parenthesis here.';
+      return Number.NaN;
+    }
+    return Number(expression.slice(start, index));
   }
 
-  let value = numbers[0];
-  operators.forEach((operator, index) => {
-    value = operator === '+' ? value + numbers[index + 1] : value - numbers[index + 1];
-  });
+  function parseProduct(): number {
+    let value = parseFactor();
+    while (expression[index] === '×' || expression[index] === '÷') {
+      const operator = expression[index];
+      index += 1;
+      const next = parseFactor();
+      if (operator === '÷' && next === 0) {
+        parseError = 'Division by zero is not allowed.';
+        return Number.NaN;
+      }
+      value = operator === '×' ? value * next : value / next;
+    }
+    return value;
+  }
+
+  function parseSum(): number {
+    let value = parseProduct();
+    while (expression[index] === '+' || expression[index] === '-') {
+      const operator = expression[index];
+      index += 1;
+      const next = parseProduct();
+      value = operator === '+' ? value + next : value - next;
+    }
+    return value;
+  }
+
+  const value = parseSum();
+  if (parseError) return { ok: false, reason: parseError };
+  if (index !== expression.length) {
+    return { ok: false, reason: 'Check the order of numbers, operators, and parentheses.' };
+  }
 
   return Number.isFinite(value)
     ? { ok: true, value }
@@ -122,7 +144,19 @@ function evaluateExpression(raw: string): { ok: true; value: number } | { ok: fa
 }
 
 function formatTime(seconds: number) {
-  return `0:${String(Math.max(0, seconds)).padStart(2, '0')}`;
+  const safeSeconds = Math.max(0, seconds);
+  return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, '0')}`;
+}
+
+function formatExpression(value: string) {
+  return normalizeExpression(value).replace(/([+\-×÷])/g, ' $1 ');
+}
+
+function findFactorPair(value: number): [number, number] | null {
+  for (let factor = Math.floor(Math.sqrt(value)); factor >= 2; factor -= 1) {
+    if (value % factor === 0) return [factor, value / factor];
+  }
+  return null;
 }
 
 function playTone(success: boolean) {
@@ -148,12 +182,13 @@ export default function Home() {
   const [target, setTarget] = useState(96);
   const [expression, setExpression] = useState('');
   const [inventory, setInventory] = useState<Inventory>(makeInventory);
-  const [feedback, setFeedback] = useState<Feedback>({ kind: 'idle', message: 'Tap chips or type an equation.' });
-  const [difficulty, setDifficulty] = useState<Difficulty>('lower');
-  const [timerSetting, setTimerSetting] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(0);
-  const [soundOn, setSoundOn] = useState(true);
-  const [showGuide, setShowGuide] = useState(true);
+  const [feedback, setFeedback] = useState<Feedback>({ kind: 'idle', message: 'Use the keypad or tap chips to build an equation.' });
+  const [timeLeft, setTimeLeft] = useState(TIMER_SECONDS);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const difficulty: Difficulty = 'lower';
+  const soundOn = true;
+  const historyIdRef = useRef(0);
   const toolActionsRef = useRef<{
     newNumber: () => number;
     resetAll: () => number;
@@ -167,46 +202,35 @@ export default function Home() {
   const selectedCounts = useMemo(() => requiredChips(expression), [expression]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem('smart-delivery-settings');
-    if (!stored) return;
-    const restoreId = window.setTimeout(() => {
-      try {
-        const settings = JSON.parse(stored) as Partial<{
-          difficulty: Difficulty;
-          timerSetting: number;
-          soundOn: boolean;
-          showGuide: boolean;
-        }>;
-        if (settings.difficulty) setDifficulty(settings.difficulty);
-        if ([0, 30, 60].includes(settings.timerSetting ?? -1)) {
-          setTimerSetting(settings.timerSetting ?? 0);
-          setTimeLeft(settings.timerSetting ?? 0);
+    if (!timerRunning) return;
+    const timerId = window.setInterval(() => {
+      setTimeLeft((current) => {
+        if (current <= 1) {
+          setTimerRunning(false);
+          return 0;
         }
-        if (typeof settings.soundOn === 'boolean') setSoundOn(settings.soundOn);
-        if (typeof settings.showGuide === 'boolean') setShowGuide(settings.showGuide);
-      } catch {
-        window.localStorage.removeItem('smart-delivery-settings');
-      }
-    }, 0);
-    return () => window.clearTimeout(restoreId);
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem('smart-delivery-settings', JSON.stringify({ difficulty, timerSetting, soundOn, showGuide }));
-  }, [difficulty, timerSetting, soundOn, showGuide]);
-
-  useEffect(() => {
-    if (timerSetting === 0 || timeLeft <= 0) return;
-    const timerId = window.setInterval(() => setTimeLeft((current) => current - 1), 1000);
+        return current - 1;
+      });
+    }, 1000);
     return () => window.clearInterval(timerId);
-  }, [timerSetting, timeLeft]);
+  }, [timerRunning]);
+
+  function resetTimer() {
+    setTimerRunning(false);
+    setTimeLeft(TIMER_SECONDS);
+  }
+
+  function startTimer() {
+    if (timeLeft <= 0) setTimeLeft(TIMER_SECONDS);
+    setTimerRunning(true);
+  }
 
   function startNewNumber() {
     const next = randomTarget(difficulty, target);
     setTarget(next);
     setExpression('');
     setFeedback({ kind: 'idle', message: 'New number ready. Build an equation.' });
-    setTimeLeft(timerSetting);
+    resetTimer();
     return next;
   }
 
@@ -215,14 +239,9 @@ export default function Home() {
     setInventory(makeInventory());
     setExpression('');
     setTarget(next);
-    setFeedback({ kind: 'info', message: 'A fresh training round is ready.' });
-    setTimeLeft(timerSetting);
+    setFeedback({ kind: 'idle', message: 'Use the keypad or tap chips to build an equation.' });
+    resetTimer();
     return next;
-  }
-
-  function resetAllChips() {
-    setInventory(makeInventory());
-    setFeedback({ kind: 'info', message: 'All number and operator chips are available again.' });
   }
 
   function appendChip(symbol: SymbolKey) {
@@ -240,15 +259,32 @@ export default function Home() {
     setFeedback({ kind: 'idle', message: 'Equation cleared. Your used chip stock is unchanged.' });
   }
 
-  function undoLastChip() {
+  function deleteLastKey() {
     setExpression((current) => normalizeExpression(current).slice(0, -1));
-    setFeedback({ kind: 'idle', message: 'Last chip removed.' });
+    setFeedback({ kind: 'idle', message: 'Last key removed.' });
+  }
+
+  function appendKey(key: KeypadKey) {
+    if (key === '(' || key === ')') {
+      setExpression((current) => `${normalizeExpression(current)}${key}`.slice(0, 32));
+      setFeedback({ kind: 'idle', message: 'Keep building, then check your equation.' });
+      return;
+    }
+    appendChip(key);
+  }
+
+  function recordHistory(value: string, correct: boolean) {
+    const normalized = normalizeExpression(value);
+    if (!normalized) return;
+    historyIdRef.current += 1;
+    setHistory((current) => [...current, { id: historyIdRef.current, equation: formatExpression(normalized), correct }]);
   }
 
   function checkEquation(value = expression) {
     if (value !== expression) setExpression(value);
-    if (timerSetting > 0 && timeLeft <= 0) {
-      setFeedback({ kind: 'error', message: 'Time is up. Choose New Number to try another round.' });
+    if (timeLeft <= 0) {
+      setFeedback({ kind: 'error', message: 'Time is up. Reset the timer or choose New Number to try another round.' });
+      recordHistory(value, false);
       if (soundOn) playTone(false);
       return { status: 'time_up', target };
     }
@@ -256,12 +292,14 @@ export default function Home() {
     const result = evaluateExpression(value);
     if (!result.ok) {
       setFeedback({ kind: 'error', message: result.reason });
+      recordHistory(value, false);
       if (soundOn) playTone(false);
       return { status: 'invalid', target, reason: result.reason };
     }
 
     if (Math.abs(result.value - target) > Number.EPSILON) {
       setFeedback({ kind: 'error', message: `${normalizeExpression(value)} = ${result.value}, not ${target}. Try another strategy.` });
+      recordHistory(value, false);
       if (soundOn) playTone(false);
       return { status: 'incorrect', target, value: result.value };
     }
@@ -270,6 +308,7 @@ export default function Home() {
     const missing = Object.entries(needed).find(([symbol, count]) => inventory[symbol as SymbolKey] < (count ?? 0));
     if (missing) {
       setFeedback({ kind: 'error', message: `Correct maths, but there are not enough ${missing[0]} chips available.` });
+      recordHistory(value, false);
       if (soundOn) playTone(false);
       return { status: 'missing_chips', target, symbol: missing[0] };
     }
@@ -282,14 +321,9 @@ export default function Home() {
       return next;
     });
     setFeedback({ kind: 'success', message: `Correct! ${normalizeExpression(value)} = ${target}. The required chips have been used.` });
+    recordHistory(value, true);
     if (soundOn) playTone(true);
     return { status: 'correct', target, expression: normalizeExpression(value) };
-  }
-
-  function updateExpression(value: string) {
-    const cleaned = value.replace(/[^0-9+\-×÷*/\s]/g, '').slice(0, 32);
-    setExpression(cleaned);
-    setFeedback({ kind: 'idle', message: 'Press Check when your equation is ready.' });
   }
 
   const tens = Math.floor(target / 10) * 10;
@@ -312,7 +346,7 @@ export default function Home() {
       {
         name: 'start_new_math_round',
         title: 'Start new maths round',
-        description: 'Choose a new Math Answer, clear the equation, and restart the optional timer.',
+        description: 'Choose a new Math Answer, clear the equation, and reset the three-minute timer.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         annotations: { readOnlyHint: false, untrustedContentHint: false },
         execute: () => ({ target: toolActionsRef.current.newNumber(), status: 'ready' }),
@@ -320,7 +354,7 @@ export default function Home() {
       {
         name: 'reset_math_trainer',
         title: 'Reset maths trainer',
-        description: 'Restore every chip and start a fresh training round.',
+        description: 'Restore every chip and reset the current training round.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         annotations: { readOnlyHint: false, untrustedContentHint: false },
         execute: () => ({ target: toolActionsRef.current.resetAll(), status: 'reset' }),
@@ -365,22 +399,19 @@ export default function Home() {
             <h1 id="page-title">Smart Delivery &amp; Maths Trainer</h1>
           </div>
           <div className="top-actions">
-            <Button className="action-button action-primary" onClick={startNewNumber} size="lg">
-              <Dices aria-hidden="true" /> New Number
-            </Button>
+            <div className={`timer-control ${timeLeft <= 10 ? 'timer-control-warning' : ''}`} aria-label={`Timer ${formatTime(timeLeft)}`}>
+              <Timer aria-hidden="true" />
+              <strong>{formatTime(timeLeft)}</strong>
+              <Button className="timer-button timer-start" onClick={startTimer} disabled={timerRunning} size="lg">
+                <Play aria-hidden="true" /> Start
+              </Button>
+              <Button className="timer-button" variant="outline" onClick={resetTimer} size="lg">
+                Reset
+              </Button>
+            </div>
             <Button className="action-button" variant="outline" onClick={resetAll} size="lg">
               <RotateCcw aria-hidden="true" /> Reset All
             </Button>
-            <SettingsDialog
-              difficulty={difficulty}
-              setDifficulty={setDifficulty}
-              timerSetting={timerSetting}
-              setTimerSetting={(seconds) => { setTimerSetting(seconds); setTimeLeft(seconds); }}
-              soundOn={soundOn}
-              setSoundOn={setSoundOn}
-              showGuide={showGuide}
-              setShowGuide={setShowGuide}
-            />
           </div>
         </header>
 
@@ -423,34 +454,20 @@ export default function Home() {
           <div className="answer-copy">
             <div className="answer-label-row">
               <span className="answer-label">Math Answer</span>
-              {timerSetting > 0 && (
-                <span className={`timer-pill ${timeLeft <= 5 ? 'timer-warning' : ''}`}>
-                  <Timer aria-hidden="true" /> {formatTime(timeLeft)}
-                </span>
-              )}
             </div>
             <strong className="answer-number">{target}</strong>
           </div>
           <Button className="answer-new-button" variant="outline" onClick={startNewNumber} aria-label="Choose a new math answer">
-            <Dices aria-hidden="true" />
+            <DiceCubeIcon />
             <span>New<br />Number</span>
           </Button>
         </section>
 
         <section className="equation-panel" aria-label="Equation builder">
           <div className="equation-row">
-            <label className="sr-only" htmlFor="equation">Enter your equation</label>
-            <input
-              id="equation"
-              className="equation-input"
-              value={expression}
-              onChange={(event) => updateExpression(event.target.value)}
-              onKeyDown={(event) => { if (event.key === 'Enter') checkEquation(); }}
-              inputMode="text"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="Enter your equation here..."
-            />
+            <output className={`equation-display ${expression ? '' : 'equation-display-empty'}`} aria-label="Current equation">
+              {expression ? formatExpression(expression) : 'Build your equation with the keypad'}
+            </output>
             <Button className="check-button" onClick={() => checkEquation()} size="lg">
               <Check aria-hidden="true" /> Check
             </Button>
@@ -458,18 +475,71 @@ export default function Home() {
 
           <output className={`feedback feedback-${feedback.kind}`} aria-live="polite">{feedback.message}</output>
 
+          <div className="equation-keypad" aria-label="Equation keypad">
+            {KEYPAD_NUMBERS.map((key) => (
+              <button
+                type="button"
+                className="keypad-key"
+                key={key}
+                onClick={() => appendKey(key)}
+                disabled={(selectedCounts[key] ?? 0) >= inventory[key]}
+                aria-label={`Add ${key}`}
+              >
+                {key}
+              </button>
+            ))}
+            {OPERATORS.map((key) => (
+              <button
+                type="button"
+                className="keypad-key keypad-operator"
+                key={key}
+                onClick={() => appendKey(key)}
+                disabled={(selectedCounts[key] ?? 0) >= inventory[key]}
+                aria-label={`Add ${key}`}
+              >
+                {key === '-' ? '−' : key}
+              </button>
+            ))}
+            <button type="button" className="keypad-key" onClick={() => appendKey('(')} aria-label="Add opening parenthesis">(</button>
+            <button type="button" className="keypad-key" onClick={() => appendKey(')')} aria-label="Add closing parenthesis">)</button>
+            <button type="button" className="keypad-key keypad-delete keypad-span-two" onClick={deleteLastKey} disabled={!expression}>
+              <DeleteIcon aria-hidden="true" /> Delete
+            </button>
+            <button type="button" className="keypad-key keypad-clear keypad-span-two" onClick={clearEquation} disabled={!expression}>
+              <Trash2 aria-hidden="true" /> Clear
+            </button>
+          </div>
+
           <div className="builder-actions">
             <Button variant="outline" onClick={clearEquation} className="builder-button">
               <Trash2 aria-hidden="true" /> Clear
             </Button>
-            <Button variant="outline" onClick={undoLastChip} className="builder-button" disabled={!expression}>
-              <Undo2 aria-hidden="true" /> Undo Last Chip
-            </Button>
-            <Button variant="outline" onClick={resetAllChips} className="builder-button builder-reset">
-              <RefreshCw aria-hidden="true" /> Reset All Chips
-            </Button>
-            {showGuide && <StrategyDialog target={target} tens={tens} ones={ones} />}
+            <StrategyDialog target={target} tens={tens} ones={ones} />
           </div>
+        </section>
+
+        <section className="history-panel" aria-labelledby="history-title">
+          <div className="history-heading">
+            <div>
+              <h2 id="history-title">Math Equation History</h2>
+              <p>Review the equations checked during this practice.</p>
+            </div>
+            <Button variant="outline" className="history-clear" onClick={() => setHistory([])} disabled={history.length === 0}>
+              Clear History
+            </Button>
+          </div>
+          {history.length === 0 ? (
+            <p className="history-empty">Checked equations will appear here.</p>
+          ) : (
+            <ol className="history-list">
+              {history.map((entry) => (
+                <li key={entry.id} className={entry.correct ? 'history-correct' : 'history-incorrect'}>
+                  <span>{entry.equation}</span>
+                  <strong>{entry.correct ? '✓ Correct' : '✕ Not Correct'}</strong>
+                </li>
+              ))}
+            </ol>
+          )}
         </section>
       </section>
       <p className="practice-note">Practice tool only. Competition rules should determine the final target ranges and valid equation formats.</p>
@@ -521,64 +591,37 @@ function ChipRow({ symbol, total, available, selected, color, onSelect, operator
   );
 }
 
-function SettingsDialog({ difficulty, setDifficulty, timerSetting, setTimerSetting, soundOn, setSoundOn, showGuide, setShowGuide }: {
-  difficulty: Difficulty;
-  setDifficulty: (value: Difficulty) => void;
-  timerSetting: number;
-  setTimerSetting: (value: number) => void;
-  soundOn: boolean;
-  setSoundOn: (value: boolean) => void;
-  showGuide: boolean;
-  setShowGuide: (value: boolean) => void;
-}) {
+function DiceCubeIcon() {
   return (
-    <Dialog>
-      <DialogTrigger render={<Button className="action-button" variant="outline" size="lg" />}>
-        <Settings aria-hidden="true" /> Settings
-      </DialogTrigger>
-      <DialogContent className="settings-dialog">
-        <DialogHeader>
-          <DialogTitle className="dialog-title">Practice settings</DialogTitle>
-          <DialogDescription>Adjust the challenge for this device.</DialogDescription>
-        </DialogHeader>
-        <div className="settings-list">
-          <div className="setting-row">
-            <span><strong>Difficulty</strong><small>Controls the target range</small></span>
-            <Select value={difficulty} onValueChange={(value) => value && setDifficulty(value as Difficulty)}>
-              <SelectTrigger className="setting-select" aria-label="Difficulty"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="lower">Lower Primary</SelectItem>
-                <SelectItem value="upper">Upper Primary</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="setting-row">
-            <span><strong>Timer</strong><small>Optional reaction challenge</small></span>
-            <Select value={String(timerSetting)} onValueChange={(value) => setTimerSetting(Number(value ?? 0))}>
-              <SelectTrigger className="setting-select" aria-label="Timer"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="0">Off</SelectItem>
-                <SelectItem value="30">30 seconds</SelectItem>
-                <SelectItem value="60">60 seconds</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="setting-row">
-            <span><strong>Sound</strong><small>Feedback after checking</small></span>
-            <Switch checked={soundOn} onCheckedChange={setSoundOn} aria-label="Sound feedback" />
-          </div>
-          <div className="setting-row">
-            <span><strong>Strategy guide</strong><small>Show the help button</small></span>
-            <Switch checked={showGuide} onCheckedChange={setShowGuide} aria-label="Show strategy guide" />
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <svg viewBox="0 0 36 36" aria-hidden="true" focusable="false">
+      <path d="M18 3.5 31 10v16L18 32.5 5 26V10Z" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
+      <path d="M5 10l13 6.5L31 10M18 16.5v16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
+      <circle cx="18" cy="9.5" r="1.5" fill="currentColor" />
+      <circle cx="10.5" cy="15.5" r="1.4" fill="currentColor" />
+      <circle cx="14.5" cy="24" r="1.4" fill="currentColor" />
+      <circle cx="25" cy="16" r="1.4" fill="currentColor" />
+      <circle cx="25" cy="25.5" r="1.4" fill="currentColor" />
+    </svg>
   );
 }
 
 function StrategyDialog({ target, tens, ones }: { target: number; tens: number; ones: number }) {
-  const even = target % 2 === 0;
+  const factorPair = findFactorPair(target);
+  const nearHundred = target <= 100 ? `100 − ${100 - target}` : `100 + ${target - 100}`;
+  const tensEquation = ones === 0 ? `${target} + 0` : `${tens} + ${ones}`;
+  const strategies = [
+    { number: 1, label: 'Tens + Ones', equation: tensEquation },
+    { number: 2, label: 'Add 0', equation: `${target} + 0` },
+    { number: 3, label: 'Minus 0', equation: `${target} − 0` },
+    { number: 4, label: 'Add 1', equation: `${target - 1} + 1` },
+    { number: 5, label: 'Minus 1', equation: `${target + 1} − 1` },
+    { number: 6, label: 'Multiply by 1', equation: `${target} × 1` },
+  ];
+
+  function copyStrategy(equation: string) {
+    void navigator.clipboard?.writeText(equation.replace(/\s/g, ''));
+  }
+
   return (
     <Dialog>
       <DialogTrigger render={<Button variant="outline" className="builder-button guide-button" />}>
@@ -587,24 +630,30 @@ function StrategyDialog({ target, tens, ones }: { target: number; tens: number; 
       <DialogContent className="strategy-dialog">
         <DialogHeader>
           <DialogTitle className="dialog-title">Strategies for {target}</DialogTitle>
-          <DialogDescription>Find a correct equation that also uses available chips.</DialogDescription>
         </DialogHeader>
-        <div className="strategy-list">
-          <button type="button" onClick={() => navigator.clipboard?.writeText(ones === 0 ? `${target}+0` : `${tens}+${ones}`)}>
-            <span>Tens + Ones</span><strong>{ones === 0 ? `${target} + 0` : `${tens} + ${ones}`}</strong>
-          </button>
-          <button type="button" onClick={() => navigator.clipboard?.writeText(`${target}+0`)}>
-            <span>Add zero</span><strong>{target} + 0</strong>
-          </button>
-          <button type="button" onClick={() => navigator.clipboard?.writeText(`${target}-0`)}>
-            <span>Minus zero</span><strong>{target} − 0</strong>
-          </button>
-          {even && (
-            <button type="button" onClick={() => navigator.clipboard?.writeText(`${target / 2}×2`)}>
-              <span>Look for factors</span><strong>{target / 2} × 2</strong>
+        <section className="strategy-section" aria-labelledby="basic-strategies">
+          <h3 id="basic-strategies">Basic Strategies</h3>
+          <div className="strategy-list">
+            {strategies.map((strategy) => (
+              <button type="button" key={strategy.label} onClick={() => copyStrategy(strategy.equation)}>
+                <span>{strategy.number}. {strategy.label}</span><strong>{strategy.equation}</strong>
+              </button>
+            ))}
+          </div>
+        </section>
+        <section className="strategy-section" aria-labelledby="advanced-strategies">
+          <h3 id="advanced-strategies">Advanced Strategies</h3>
+          <div className="strategy-list">
+            <button type="button" onClick={() => copyStrategy(nearHundred)}>
+              <span>1. Near 100</span><strong>{nearHundred}</strong>
             </button>
-          )}
-        </div>
+            {factorPair && (
+              <button type="button" onClick={() => copyStrategy(`${factorPair[0]} × ${factorPair[1]}`)}>
+                <span>2. Factors</span><strong>{factorPair[0]} × {factorPair[1]}</strong>
+              </button>
+            )}
+          </div>
+        </section>
       </DialogContent>
     </Dialog>
   );
