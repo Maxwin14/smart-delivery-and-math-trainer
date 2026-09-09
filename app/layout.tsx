@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './target-layout.css';
 
 export const metadata: Metadata = {
   title: 'Smart Delivery & Maths Trainer',
