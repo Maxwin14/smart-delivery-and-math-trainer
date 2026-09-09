@@ -391,11 +391,14 @@
     background: #fff;
     box-shadow: none;
     overflow: hidden;
+    display: grid;
+    grid-template-rows: 21px minmax(0, 1fr) 25px;
+    row-gap: 3px;
   }
 
   .history-heading {
     height: 21px;
-    margin: 0 0 3px;
+    margin: 0;
     gap: 4px;
     align-items: center;
   }
@@ -433,7 +436,8 @@
   }
 
   .history-empty {
-    margin: 3px 0 0;
+    align-self: start;
+    margin: 0;
     padding: 7px;
     border-radius: 3px;
     font-size: 5px;
@@ -441,10 +445,13 @@
 
   .history-list {
     gap: 2px;
-    height: 166px;
-    margin: 3px 0 0;
-    padding: 0;
-    overflow: hidden;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0 2px 0 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .history-list li {
@@ -464,7 +471,7 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 3px;
     height: 25px;
-    margin: 4px 0 0;
+    margin: 0;
     padding: 3px 0 0;
     border-top: 1px solid #e5eaf1;
   }
