@@ -157,9 +157,19 @@ h1 { margin: 0; color: #101831; font-size: clamp(1.75rem, 3.2vw, 2.65rem); font-
 .history-correct strong { color: #087b49; }
 .history-incorrect { border-color: #f3c9cf !important; background: #fff4f5; }
 .history-incorrect strong { color: #b3283a; }
+.history-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 16px 0 0; padding: 16px 0 0; border-top: 1px solid #e5eaf1; }
+.history-stats div { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; padding: 10px 13px; border: 1px solid #e0e6ef; border-radius: 11px; background: #f8fafe; }
+.history-stats dt { color: #69758c; font-size: .86rem; font-weight: 700; }
+.history-stats dd { margin: 0; color: #301078; font-size: 1.2rem; font-weight: 900; font-variant-numeric: tabular-nums; }
 .practice-note { width: min(1420px, 100%); margin: 12px auto 0; color: #758096; font-size: .78rem; text-align: center; }
 
 .strategy-dialog { max-width: 760px !important; padding: 24px !important; border-radius: 20px !important; }
+.times-up-dialog { max-width: 390px !important; justify-items: center; padding: 30px 26px 26px !important; border: 1px solid #d9c8fc !important; border-radius: 20px !important; background: linear-gradient(145deg, #fff, #f7f2ff) !important; text-align: center; box-shadow: 0 24px 70px rgba(47,0,125,.18) !important; }
+.times-up-icon { display: grid; width: 62px; height: 62px; place-items: center; border-radius: 18px; background: #eee5ff; color: #5d2abc; }
+.times-up-icon svg { width: 34px; height: 34px; stroke-width: 2.4; }
+.times-up-copy { align-items: center; }
+.times-up-copy .dialog-title { color: #3a0c8c; font-size: 1.75rem !important; }
+.times-up-reset { width: 100%; min-height: 50px !important; border-radius: 12px !important; background: linear-gradient(135deg, #7743dc, #6430c8) !important; color: #fff !important; font-size: 1rem !important; font-weight: 850 !important; }
 .dialog-title { color: #141d39; font-size: 1.3rem !important; font-weight: 850 !important; }
 .strategy-section { margin-top: 4px; }
 .strategy-section + .strategy-section { margin-top: 14px; }
@@ -214,6 +224,7 @@ h1 { margin: 0; color: #101831; font-size: clamp(1.75rem, 3.2vw, 2.65rem); font-
   .history-heading { align-items: flex-start; }
   .history-heading h2 { font-size: 1.12rem; }
   .history-list li { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .history-stats { grid-template-columns: 1fr; gap: 7px; }
   .strategy-list { grid-template-columns: 1fr; }
   .practice-note { padding: 0 14px 14px; }
 }

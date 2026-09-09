@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -185,6 +186,7 @@ export default function Home() {
   const [feedback, setFeedback] = useState<Feedback>({ kind: 'idle', message: 'Use the keypad or tap chips to build an equation.' });
   const [timeLeft, setTimeLeft] = useState(TIMER_SECONDS);
   const [timerRunning, setTimerRunning] = useState(false);
+  const [timesUpOpen, setTimesUpOpen] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const difficulty: Difficulty = 'lower';
   const soundOn = true;
@@ -200,13 +202,17 @@ export default function Home() {
   });
 
   const selectedCounts = useMemo(() => requiredChips(expression), [expression]);
+  const correctTotal = useMemo(() => history.reduce((total, entry) => total + Number(entry.correct), 0), [history]);
+  const incorrectTotal = history.length - correctTotal;
 
   useEffect(() => {
     if (!timerRunning) return;
     const timerId = window.setInterval(() => {
       setTimeLeft((current) => {
         if (current <= 1) {
+          window.clearInterval(timerId);
           setTimerRunning(false);
+          setTimesUpOpen(true);
           return 0;
         }
         return current - 1;
@@ -218,10 +224,11 @@ export default function Home() {
   function resetTimer() {
     setTimerRunning(false);
     setTimeLeft(TIMER_SECONDS);
+    setTimesUpOpen(false);
   }
 
   function startTimer() {
-    if (timeLeft <= 0) setTimeLeft(TIMER_SECONDS);
+    if (timeLeft <= 0) return;
     setTimerRunning(true);
   }
 
@@ -284,10 +291,32 @@ export default function Home() {
     if (value !== expression) setExpression(value);
     if (timeLeft <= 0) {
       setFeedback({ kind: 'error', message: 'Time is up. Reset the timer or choose New Number to try another round.' });
-      recordHistory(value, false);
       if (soundOn) playTone(false);
       return { status: 'time_up', target };
     }
+
+    const normalized = normalizeExpression(value);
+    if (!normalized) {
+      setFeedback({ kind: 'error', message: 'Build an equation first.' });
+      if (soundOn) playTone(false);
+      return { status: 'invalid', target, reason: 'Build an equation first.' };
+    }
+
+    const needed = requiredChips(normalized);
+    const missing = Object.entries(needed).find(([symbol, count]) => inventory[symbol as SymbolKey] < (count ?? 0));
+    if (missing) {
+      setFeedback({ kind: 'error', message: `This equation was not submitted because there are not enough ${missing[0]} chips available.` });
+      if (soundOn) playTone(false);
+      return { status: 'missing_chips', target, symbol: missing[0] };
+    }
+
+    setInventory((current) => {
+      const next = { ...current };
+      Object.entries(needed).forEach(([symbol, count]) => {
+        next[symbol as SymbolKey] -= count ?? 0;
+      });
+      return next;
+    });
 
     const result = evaluateExpression(value);
     if (!result.ok) {
@@ -303,23 +332,6 @@ export default function Home() {
       if (soundOn) playTone(false);
       return { status: 'incorrect', target, value: result.value };
     }
-
-    const needed = requiredChips(value);
-    const missing = Object.entries(needed).find(([symbol, count]) => inventory[symbol as SymbolKey] < (count ?? 0));
-    if (missing) {
-      setFeedback({ kind: 'error', message: `Correct maths, but there are not enough ${missing[0]} chips available.` });
-      recordHistory(value, false);
-      if (soundOn) playTone(false);
-      return { status: 'missing_chips', target, symbol: missing[0] };
-    }
-
-    setInventory((current) => {
-      const next = { ...current };
-      Object.entries(needed).forEach(([symbol, count]) => {
-        next[symbol as SymbolKey] -= count ?? 0;
-      });
-      return next;
-    });
     setFeedback({ kind: 'success', message: `Correct! ${normalizeExpression(value)} = ${target}. The required chips have been used.` });
     recordHistory(value, true);
     if (soundOn) playTone(true);
@@ -391,8 +403,9 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="trainer-shell">
-      <section className="trainer-card" aria-labelledby="page-title">
+    <>
+      <main className="trainer-shell">
+        <section className="trainer-card" aria-labelledby="page-title">
         <header className="topbar">
           <div>
             <p className="eyebrow">Practice workspace</p>
@@ -402,7 +415,7 @@ export default function Home() {
             <div className={`timer-control ${timeLeft <= 10 ? 'timer-control-warning' : ''}`} aria-label={`Timer ${formatTime(timeLeft)}`}>
               <Timer aria-hidden="true" />
               <strong>{formatTime(timeLeft)}</strong>
-              <Button className="timer-button timer-start" onClick={startTimer} disabled={timerRunning} size="lg">
+              <Button className="timer-button timer-start" onClick={startTimer} disabled={timerRunning || timeLeft === 0} size="lg">
                 <Play aria-hidden="true" /> Start
               </Button>
               <Button className="timer-button" variant="outline" onClick={resetTimer} size="lg">
@@ -518,7 +531,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="history-panel" aria-labelledby="history-title">
+          <section className="history-panel" aria-labelledby="history-title">
           <div className="history-heading">
             <div>
               <h2 id="history-title">Math Equation History</h2>
@@ -540,10 +553,27 @@ export default function Home() {
               ))}
             </ol>
           )}
+            <dl className="history-stats" aria-label="Equation statistics">
+              <div><dt>Total Questions</dt><dd>{history.length}</dd></div>
+              <div><dt>Correct</dt><dd>{correctTotal}</dd></div>
+              <div><dt>Incorrect</dt><dd>{incorrectTotal}</dd></div>
+            </dl>
+          </section>
         </section>
-      </section>
-      <p className="practice-note">Practice tool only. Competition rules should determine the final target ranges and valid equation formats.</p>
-    </main>
+        <p className="practice-note">Practice tool only. Competition rules should determine the final target ranges and valid equation formats.</p>
+      </main>
+
+      <Dialog open={timesUpOpen} onOpenChange={setTimesUpOpen}>
+        <DialogContent className="times-up-dialog" showCloseButton={false}>
+          <div className="times-up-icon"><Timer aria-hidden="true" /></div>
+          <DialogHeader className="times-up-copy">
+            <DialogTitle className="dialog-title">Times Up!</DialogTitle>
+            <DialogDescription>The three-minute timer has ended.</DialogDescription>
+          </DialogHeader>
+          <Button className="times-up-reset" onClick={resetTimer}>Reset</Button>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
