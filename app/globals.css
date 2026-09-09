@@ -147,7 +147,6 @@ h1 { margin: 0; color: #101831; font-size: clamp(1.75rem, 3.2vw, 2.65rem); font-
 .history-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .history-heading h2 { margin: 0; font-size: 1.3rem; font-weight: 850; letter-spacing: -.02em; }
 .history-heading p { margin: 3px 0 0; color: #748097; font-size: .85rem; }
-.history-clear { min-height: 42px !important; border-radius: 11px !important; background: #f5f7fa !important; color: #17203c !important; font-weight: 760 !important; }
 .history-empty { margin: 16px 0 0; padding: 16px; border: 1px dashed #d8e0eb; border-radius: 12px; color: #7c879b; text-align: center; }
 .history-list { display: flex; flex-direction: column; gap: 8px; margin: 16px 0 0; padding: 0; list-style: none; }
 .history-list li { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; padding: 10px 14px; border: 1px solid; border-radius: 11px; font-weight: 760; }

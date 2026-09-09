@@ -246,6 +246,8 @@ export default function Home() {
     setInventory(makeInventory());
     setExpression('');
     setTarget(next);
+    setHistory([]);
+    historyIdRef.current = 0;
     setFeedback({ kind: 'idle', message: 'Use the keypad or tap chips to build an equation.' });
     resetTimer();
     return next;
@@ -322,6 +324,7 @@ export default function Home() {
     if (!result.ok) {
       setFeedback({ kind: 'error', message: result.reason });
       recordHistory(value, false);
+      setExpression('');
       if (soundOn) playTone(false);
       return { status: 'invalid', target, reason: result.reason };
     }
@@ -329,11 +332,13 @@ export default function Home() {
     if (Math.abs(result.value - target) > Number.EPSILON) {
       setFeedback({ kind: 'error', message: `${normalizeExpression(value)} = ${result.value}, not ${target}. Try another strategy.` });
       recordHistory(value, false);
+      setExpression('');
       if (soundOn) playTone(false);
       return { status: 'incorrect', target, value: result.value };
     }
     setFeedback({ kind: 'success', message: `Correct! ${normalizeExpression(value)} = ${target}. The required chips have been used.` });
     recordHistory(value, true);
+    setExpression('');
     if (soundOn) playTone(true);
     return { status: 'correct', target, expression: normalizeExpression(value) };
   }
@@ -537,9 +542,6 @@ export default function Home() {
               <h2 id="history-title">Math Equation History</h2>
               <p>Review the equations checked during this practice.</p>
             </div>
-            <Button variant="outline" className="history-clear" onClick={() => setHistory([])} disabled={history.length === 0}>
-              Clear History
-            </Button>
           </div>
           {history.length === 0 ? (
             <p className="history-empty">Checked equations will appear here.</p>
@@ -570,7 +572,7 @@ export default function Home() {
             <DialogTitle className="dialog-title">Times Up!</DialogTitle>
             <DialogDescription>The three-minute timer has ended.</DialogDescription>
           </DialogHeader>
-          <Button className="times-up-reset" onClick={resetTimer}>Reset</Button>
+          <Button className="times-up-reset" onClick={() => setTimesUpOpen(false)}>Close</Button>
         </DialogContent>
       </Dialog>
     </>

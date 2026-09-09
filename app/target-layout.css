@@ -423,18 +423,6 @@
     white-space: nowrap;
   }
 
-  .history-clear {
-    flex: 0 0 auto;
-    width: auto !important;
-    min-height: 12px !important;
-    height: 12px;
-    padding: 0 4px !important;
-    border-radius: 3px !important;
-    font-size: 4px !important;
-    line-height: 1;
-    box-shadow: none !important;
-  }
-
   .history-empty {
     align-self: start;
     margin: 0;
